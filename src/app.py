@@ -94,7 +94,6 @@ def signup_for_activity(activity_name: str, email: str, name: str, db: Session =
         raise HTTPException(status_code=400, detail="Activity is full")
 
     # Find or create user
-    user = db.query(User).filter(User.email == email).first()
     participant = Participant(activity_id=activity.id, user_id=user.id)
     db.add(participant)
     db.commit()
