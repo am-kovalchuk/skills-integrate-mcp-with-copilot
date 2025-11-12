@@ -47,7 +47,12 @@ def get_activities(db: Session = Depends(get_db)):
     # Convert to the format expected by the frontend
     activities_dict = {}
     for activity in activities_list:
-        participant_emails = [participant.user.email for participant in activity.participants]
+        participants = db.query(Participant).filter(Participant.activity_id == activity.id).all()
+        participant_emails = []
+        for participant in participants:
+            user = db.query(User).filter(User.id == participant.user_id).first()
+            if user:
+                participant_emails.append(user.email)
         
         activities_dict[activity.name] = {
             "description": activity.description,
