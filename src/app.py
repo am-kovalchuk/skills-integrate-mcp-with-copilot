@@ -9,7 +9,7 @@ Now with persistent database storage!
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 import os
 from pathlib import Path
@@ -40,18 +40,14 @@ def root():
 @app.get("/activities")
 def get_activities(db: Session = Depends(get_db)):
     """Get all activities with their participants"""
-    activities_list = db.query(Activity).all()
+    activities_list = db.query(Activity).options(
+        joinedload(Activity.participants).joinedload(Participant.user)
+    ).all()
     
     # Convert to the format expected by the frontend
     activities_dict = {}
     for activity in activities_list:
-        # Get participants for this activity
-        participants = db.query(Participant).filter(Participant.activity_id == activity.id).all()
-        participant_emails = []
-        for participant in participants:
-            user = db.query(User).filter(User.id == participant.user_id).first()
-            if user:
-                participant_emails.append(user.email)
+        participant_emails = [participant.user.email for participant in activity.participants]
         
         activities_dict[activity.name] = {
             "description": activity.description,
@@ -64,7 +60,7 @@ def get_activities(db: Session = Depends(get_db)):
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str, db: Session = Depends(get_db)):
+def signup_for_activity(activity_name: str, email: str, name: str, db: Session = Depends(get_db)):
     """Sign up a student for an activity"""
     # Find the activity
     activity = db.query(Activity).filter(Activity.name == activity_name).first()
@@ -72,21 +68,15 @@ def signup_for_activity(activity_name: str, email: str, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Activity not found")
 
     # Check if activity is full
-    participant_count = db.query(Participant).filter(Participant.activity_id == activity.id).count()
-    if participant_count >= activity.max_participants:
-        raise HTTPException(status_code=400, detail="Activity is full")
-
-    # Find or create user
+    # Find or create user first to check if already registered
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        # Extract name from email (simple approach)
-        name = email.split('@')[0].title()
         user = User(email=email, name=name)
         db.add(user)
         db.commit()
         db.refresh(user)
 
-    # Check if user is already signed up
+    # Check if user is already signed up (before capacity check)
     existing_participant = db.query(Participant).filter(
         Participant.activity_id == activity.id,
         Participant.user_id == user.id
@@ -98,7 +88,13 @@ def signup_for_activity(activity_name: str, email: str, db: Session = Depends(ge
             detail="Student is already signed up"
         )
 
-    # Add user to activity
+    # Check if activity is full
+    participant_count = db.query(Participant).filter(Participant.activity_id == activity.id).count()
+    if participant_count >= activity.max_participants:
+        raise HTTPException(status_code=400, detail="Activity is full")
+
+    # Find or create user
+    user = db.query(User).filter(User.email == email).first()
     participant = Participant(activity_id=activity.id, user_id=user.id)
     db.add(participant)
     db.commit()

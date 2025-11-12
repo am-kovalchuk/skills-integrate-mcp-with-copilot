@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import List, Optional
 
 class UserBase(BaseModel):
-    email: str
+    email: EmailStr
     name: Optional[str] = None
     profile_picture_url: Optional[str] = None
 
